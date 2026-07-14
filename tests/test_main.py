@@ -52,7 +52,7 @@ class TestRegionsQ:
     @pytest.mark.parametrize(
         "region_response",
         [
-            pytest.param({"q": "нов", "country_code": "ru"},                              id="q + country_code"),
+            pytest.param({"q": "нов", "country_code": "ru"},                                id="q + country_code"),
             pytest.param({"q": "Нов", "page_size": 1},                                    id="q + page_size"),
             pytest.param({"q": "нОв", "page": 2},                                         id="q + page"),
             pytest.param({"q": "ноВ", "country_code": "us", "page": 2, "page_size": 1},   id="q + all params"),
@@ -98,17 +98,17 @@ class TestRegionsCountryCode:
     """country_code — filter by country. Allowed values: ru, kg, kz, cz. Default: no filter (all countries)."""
 
     @pytest.mark.parametrize(
-        "region_response",
+        "region_response, expected_country",
         [
-            pytest.param({"country_code": "ru"}, id="country_code=ru"),
-            pytest.param({"country_code": "kg"}, id="country_code=kg"),
-            pytest.param({"country_code": "kz"}, id="country_code=kz"),
-            pytest.param({"country_code": "cz"}, id="country_code=cz"),
+            pytest.param({"country_code": "ru"}, "ru", id="country_code=ru"),
+            pytest.param({"country_code": "kg"}, "kg", id="country_code=kg"),
+            pytest.param({"country_code": "kz"}, "kz", id="country_code=kz"),
+            pytest.param({"country_code": "cz"}, "cz", id="country_code=cz"),
         ],
-        indirect=True,
+        indirect=["region_response"],
     )
-    def test_country_code_valid_values(self, region_response):
-        """Requirement 1: each valid country_code returns items filtered to a single country."""
+    def test_country_code_valid_values(self, region_response, expected_country):
+        """Requirement 1: each valid country_code returns items filtered to the requested country."""
         status_code, data = region_response
         assert status_code == 200
         assert 'error' not in data
@@ -116,10 +116,10 @@ class TestRegionsCountryCode:
         assert isinstance(data['items'], list)
         assert len(data['items']) > 0
 
-        country_codes = {item['country']['code'] for item in data['items']}
-        assert len(country_codes) == 1, (
-            f"All items must belong to a single country, got: {country_codes}"
-        )
+        for item in data['items']:
+            assert item['country']['code'] == expected_country, (
+                f"Item country {item['country']['code']!r} does not match requested {expected_country!r}"
+            )
 
     @pytest.mark.parametrize(
         "region_response",
@@ -333,3 +333,68 @@ class TestRegionsPageSize:
         status_code, data = region_response
         assert status_code == 200
         assert 'error' in data
+
+
+class TestRegionsPagination:
+    """Pagination behavior: sequential pages must return disjoint items and a stable total."""
+
+    @pytest.mark.parametrize(
+        "region_response_pair",
+        [
+            pytest.param(
+                ({"page": 1, "page_size": 5}, {"page": 2, "page_size": 5}),
+                id="page_size=5, page 1 vs page 2",
+            ),
+            pytest.param(
+                ({"page": 1, "page_size": 10}, {"page": 2, "page_size": 10}),
+                id="page_size=10, page 1 vs page 2",
+            ),
+            pytest.param(
+                ({"country_code": "ru", "page": 1, "page_size": 5},
+                 {"country_code": "ru", "page": 2, "page_size": 5}),
+                id="country_code=ru, page_size=5, page 1 vs page 2",
+            ),
+        ],
+        indirect=True,
+    )
+    def test_pages_are_disjoint_and_total_stable(self, region_response_pair):
+        """Two sequential pages with same page_size return different items; total does not change."""
+        (status_a, data_a), (status_b, data_b) = region_response_pair
+        assert status_a == 200 and status_b == 200
+        assert 'error' not in data_a and 'error' not in data_b
+        assert len(data_a['items']) > 0 and len(data_b['items']) > 0
+
+        assert data_a['total'] == data_b['total'], (
+            f"total must be stable across pages: {data_a['total']} vs {data_b['total']}"
+        )
+
+        ids_a = {item['id'] for item in data_a['items']}
+        ids_b = {item['id'] for item in data_b['items']}
+        overlap = ids_a & ids_b
+        assert not overlap, f"Sequential pages returned overlapping ids: {overlap}"
+
+
+class TestRegionsCombinedValidParams:
+    """Combinations of valid params without q: country_code + page + page_size."""
+
+    @pytest.mark.parametrize(
+        "region_response, expected_country, expected_size",
+        [
+            pytest.param({"country_code": "ru", "page_size": 5},               "ru", 5,
+                         id="ru + page_size=5"),
+            pytest.param({"country_code": "cz", "page": 1, "page_size": 5},    "cz", 5,
+                         id="cz + page=1 + page_size=5"),
+        ],
+        indirect=["region_response"],
+    )
+    def test_country_and_pagination_together(self, region_response, expected_country, expected_size):
+        """All items match the requested country_code; item count does not exceed the requested page_size."""
+        status_code, data = region_response
+        assert status_code == 200
+        assert 'error' not in data
+        assert 0 < len(data['items']) <= expected_size
+
+        for item in data['items']:
+            assert item['country']['code'] == expected_country, (
+                f"Item country {item['country']['code']!r} does not match requested {expected_country!r}"
+            )
