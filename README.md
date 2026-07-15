@@ -32,9 +32,9 @@ BASE_URL = 'https://host/1.0/regions'
 
 ```bash
 
-pytest -v                                 # default run
+pytest                                    # default run (flags -v/--tb=short set in pytest.ini)
 pytest --alluredir=allure-results         # produce Allure results
-pytest tests/test_main.py::TestRegionsQ   # single class
+pytest -k TestRegionsQ                    # single class
 pytest -k "page_size"                     # filter by test id substring
 ```
 
@@ -52,8 +52,8 @@ allure open allure-report
 
 ```powershell
 Remove-Item allure-results\* -Recurse -Force                                # Let's clear the reports
-pytest tests/test_main.py::TestRegionsPage -v --alluredir=allure-results    # We are launching only TestRegionsPage
-pytest -v --alluredir=allure-results                                        # Run all tests + report allure
+pytest -k TestRegionsPage --alluredir=allure-results                        # We are launching only TestRegionsPage
+pytest --alluredir=allure-results                                           # Run all tests + report allure
 allure serve allure-results                                                 # Open the report in the browser
 ```
 
@@ -72,6 +72,7 @@ docker run --rm -v "${PWD}/allure-results:/app/allure-results" regions-tests
 .
 ├── main.py                       # Region wrapper over requests + network error classification
 ├── conftest.py                   # region_response / region_response_pair fixtures, Allure grouping
+├── pytest.ini                    # default pytest options (-v, --strict-markers, --tb=short, testpaths=tests)
 ├── src/
 │   ├── config/url.py             # BASE_URL (create locally)
 │   └── models/Pydantic/region.py # Pydantic response models (RegionResponse, RegionErrorResponse)
